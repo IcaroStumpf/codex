@@ -337,12 +337,27 @@ fn prepare_preview(
             cell_height,
         }))
     } else {
+        let max_width = u32::from(area.width).clamp(1, 512);
+        let max_height = u32::from(area.height).saturating_mul(2).clamp(1, 1_024);
+        let (cell_width, cell_height) = cell_size.unwrap_or((1, 2));
+        // A half-block sample occupies one cell's width and half its height. Fit using those
+        // physical proportions; square samples are only an assumption when geometry is unknown.
+        let aspect_width = u128::from(source.width().max(1)) * u128::from(cell_height);
+        let aspect_height = u128::from(source.height().max(1)) * 2 * u128::from(cell_width);
+        let (width, height) =
+            if u128::from(max_width) * aspect_height <= u128::from(max_height) * aspect_width {
+                (
+                    max_width,
+                    (u128::from(max_width) * aspect_height / aspect_width).max(1) as u32,
+                )
+            } else {
+                (
+                    (u128::from(max_height) * aspect_width / aspect_height).max(1) as u32,
+                    max_height,
+                )
+            };
         let mut pixels = source
-            .resize(
-                u32::from(area.width).clamp(1, 512),
-                u32::from(area.height).saturating_mul(2).clamp(1, 1_024),
-                FilterType::Triangle,
-            )
+            .resize_exact(width, height, FilterType::Triangle)
             .to_rgba8();
         composite_checkerboard(&mut pixels, 4);
         PreviewImage::HalfBlocks(pixels)
@@ -381,6 +396,8 @@ fn centered(area: Rect, width: u16, height: u16) -> Rect {
     )
 }
 
+// Image pixels need their source RGB colors independently of the terminal's UI theme.
+#[allow(clippy::disallowed_methods)]
 fn render_halfblocks(pixels: &RgbaImage, area: Rect, buffer: &mut Buffer) {
     let image_area = centered(
         area,
@@ -542,6 +559,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::disallowed_methods)] // Assert the image's source RGB colors.
     fn halfblocks_fit_preserve_aspect_and_use_two_pixels_per_cell() {
         let area = Rect::new(3, 4, 20, 10);
         let preview = prepare_preview(&image(100, 50), area, None, None);
@@ -555,6 +573,19 @@ mod tests {
         assert_eq!(buffer[(3, 6)].fg, Color::Rgb(255, 0, 0));
         assert_eq!(buffer[(3, 6)].bg, Color::Rgb(255, 0, 0));
         assert_eq!(buffer[(3, 5)].symbol(), " ");
+    }
+
+    #[test]
+    fn halfblocks_preserve_physical_aspect_with_measured_cell_geometry() {
+        let area = Rect::new(0, 0, 30, 15);
+        let preview = prepare_preview(&image(100, 100), area, None, Some((10, 30)));
+        let PreviewImage::HalfBlocks(pixels) = preview.image else {
+            panic!("expected half blocks")
+        };
+        assert_eq!(pixels.dimensions(), (30, 20));
+        assert_eq!(pixels.width() * 10, pixels.height() * 30 / 2);
+        assert!(pixels.width() <= u32::from(area.width));
+        assert!(pixels.height().div_ceil(2) <= u32::from(area.height));
     }
 
     #[test]
