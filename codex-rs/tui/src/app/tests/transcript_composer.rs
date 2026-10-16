@@ -42,6 +42,60 @@ async fn press_key(
 }
 
 #[tokio::test]
+async fn image_preview_preserves_the_draft_and_closes_without_backtracking() -> Result<()> {
+    let (mut app, _app_event_rx, _op_rx) = make_test_app_with_channels().await;
+    let mut app_server = start_config_write_test_app_server(&app).await?;
+    let mut tui = crate::tui::test_support::make_test_tui()?;
+    app.chat_widget
+        .apply_external_edit("preserved draft".into());
+    app.handle_event(
+        &mut tui,
+        &mut app_server,
+        AppEvent::OpenImagePreview {
+            path: Some(std::env::temp_dir().join("missing-preview-image.png")),
+        },
+    )
+    .await?;
+    assert!(matches!(app.overlay, Some(Overlay::Image(_))));
+    assert!(!app.backtrack.overlay_preview_active);
+    press_key(&mut app, &mut tui, &mut app_server, KeyCode::Esc).await?;
+    assert!(app.overlay.is_none());
+    assert!(!app.backtrack.primed);
+    assert_eq!(
+        app.chat_widget.composer_text_with_pending(),
+        "preserved draft"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn image_preview_can_close_while_disconnected() -> Result<()> {
+    let (mut app, _app_event_rx, _op_rx) = make_test_app_with_channels().await;
+    let mut app_server = start_config_write_test_app_server(&app).await?;
+    let mut tui = crate::tui::test_support::make_test_tui()?;
+    app.reconnect.offline = true;
+    app.handle_event(
+        &mut tui,
+        &mut app_server,
+        AppEvent::OpenImagePreview {
+            path: Some(std::env::temp_dir().join("missing-preview-image.png")),
+        },
+    )
+    .await?;
+    assert!(matches!(app.overlay, Some(Overlay::Image(_))));
+    let control = app
+        .handle_tui_event(
+            &mut tui,
+            &mut app_server,
+            TuiEvent::Key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL)),
+        )
+        .await?;
+    assert!(matches!(control, AppRunControl::Continue));
+    assert!(app.overlay.is_none());
+    Ok(())
+}
+
+#[tokio::test]
 async fn analytics_preserves_the_draft_and_retains_the_view_on_reopen() -> Result<()> {
     let (mut app, _app_event_rx, _op_rx) = make_test_app_with_channels().await;
     let mut app_server = start_config_write_test_app_server(&app).await?;

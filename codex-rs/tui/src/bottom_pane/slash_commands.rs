@@ -344,6 +344,7 @@ mod tests {
                 SlashCommand::Export,
                 SlashCommand::Raw,
                 SlashCommand::Diff,
+                SlashCommand::Image,
                 SlashCommand::Mention,
                 SlashCommand::Status,
                 SlashCommand::Daemon,

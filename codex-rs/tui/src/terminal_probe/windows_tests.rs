@@ -155,6 +155,75 @@ fn preserves_every_record_when_no_valid_color_response_arrives() {
 }
 
 #[test]
+fn preserves_native_input_around_cell_size_response() {
+    let mut input = BufferedConsoleInput::default();
+    input.push(key_record(
+        /*character*/ 0x00e9, /*pressed*/ true, /*control_key_state*/ 8,
+    ));
+    push_ascii(&mut input, b"\x1b[6;20;10t");
+    input.push(key_record(
+        u16::from(b'x'),
+        /*pressed*/ false,
+        /*control_key_state*/ 16,
+    ));
+    push_ascii(&mut input, b"\x1b[200~\x1b[6;90;90t\x1b[201~");
+
+    let preserved = input.preserved_records();
+    assert_eq!(
+        preserved.len(),
+        2 + b"\x1b[200~\x1b[6;90;90t\x1b[201~".len()
+    );
+    // SAFETY: All preserved records were constructed as KEY_EVENT records above.
+    let unicode = unsafe { preserved[0].Event.KeyEvent };
+    let release = unsafe { preserved[1].Event.KeyEvent };
+    assert_eq!(unsafe { unicode.uChar.UnicodeChar }, 0x00e9);
+    assert_eq!(unicode.dwControlKeyState, 8);
+    assert_eq!(release.bKeyDown, 0);
+    assert_eq!(release.dwControlKeyState, 16);
+}
+
+#[test]
+fn missing_cell_size_reply_keeps_color_result_at_deadline() {
+    let mut replay = super::ConsoleInputReplay::new(std::ptr::null_mut());
+    push_ascii(
+        &mut replay.input,
+        b"\x1b]10;rgb:f/e/d\x07\x1b]11;rgb:0/0/0\x07",
+    );
+
+    // An expired deadline must return the partial result without touching the console handle.
+    let result = replay.read_until(std::time::Instant::now());
+    replay.input = BufferedConsoleInput::default();
+
+    assert_eq!(
+        result.expect("return colors without waiting for unsupported cell-size query"),
+        Some(DefaultColors {
+            fg: (255, 238, 221),
+            bg: (0, 0, 0),
+        })
+    );
+}
+
+#[test]
+fn complete_probe_returns_without_waiting_for_deadline() {
+    let mut replay = super::ConsoleInputReplay::new(std::ptr::null_mut());
+    push_ascii(
+        &mut replay.input,
+        b"\x1b]10;rgb:f/e/d\x07\x1b[6;20;10t\x1b]11;rgb:0/0/0\x07",
+    );
+
+    let result = replay.read_until(std::time::Instant::now() + std::time::Duration::from_secs(1));
+    replay.input = BufferedConsoleInput::default();
+
+    assert_eq!(
+        result.expect("return complete probe without touching console handle"),
+        Some(DefaultColors {
+            fg: (255, 238, 221),
+            bg: (0, 0, 0),
+        })
+    );
+}
+
+#[test]
 fn decodes_console_color_attribute_indices() {
     assert_eq!(
         decode_console_default_colors(/*attributes*/ 0x21, &color_table()),

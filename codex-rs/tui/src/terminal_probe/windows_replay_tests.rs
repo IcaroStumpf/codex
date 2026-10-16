@@ -1,11 +1,12 @@
 use super::MAX_TERMINAL_COLOR_RESPONSE_BYTES;
-use super::terminal_color_response_ranges;
+use super::terminal_cell_size;
 use super::terminal_default_colors;
+use super::terminal_response_ranges;
 use crate::terminal_probe::DefaultColors;
 use pretty_assertions::assert_eq;
 
 fn preserved_input(input: &[u8]) -> Vec<u8> {
-    let ranges = terminal_color_response_ranges(input);
+    let ranges = terminal_response_ranges(input);
     input
         .iter()
         .enumerate()
@@ -91,4 +92,59 @@ fn parses_real_color_replies_around_bracketed_paste() {
             bg: (255, 127, 0),
         })
     );
+}
+
+#[test]
+fn parses_cell_dimensions_and_preserves_interleaved_typeahead() {
+    let input = b"before\x1b]10;rgb:f/e/d\x07between\x1b[6;20;10tafter";
+
+    assert_eq!(terminal_cell_size(input), Some((10, 20)));
+    assert_eq!(preserved_input(input), b"beforebetweenafter");
+}
+
+#[test]
+fn preserves_invalid_and_unfinished_cell_size_responses() {
+    for input in [
+        b"\x1b[6;0;10t".as_slice(),
+        b"\x1b[6;20;0t",
+        b"\x1b[6;-20;10t",
+        b"\x1b[6;+20;10t",
+        b"\x1b[6;65536;10t",
+        b"\x1b[6;20;65536t",
+        b"\x1b[6;20;10;1t",
+        b"\x1b[6;20;t",
+        b"\x1b[6;;10t",
+        b"\x1b[6;20;10",
+        b"\x1b[4;20;10t",
+    ] {
+        assert_eq!(terminal_cell_size(input), None);
+        assert_eq!(preserved_input(input), input);
+    }
+}
+
+#[test]
+fn parses_cell_size_after_incomplete_csi_and_unrelated_keys() {
+    let input = b"\x1b[6;unfinished\x1b[Atyped\x1b[6;18;9t";
+
+    assert_eq!(terminal_cell_size(input), Some((9, 18)));
+    assert_eq!(preserved_input(input), b"\x1b[6;unfinished\x1b[Atyped");
+}
+
+#[test]
+fn preserves_cell_size_looking_bracketed_pastes() {
+    for input in [
+        b"before\x1b[200~\x1b[6;20;10t\x1b[201~after".as_slice(),
+        b"before\x1b[200~\x1b[6;20;10t",
+    ] {
+        assert_eq!(terminal_cell_size(input), None);
+        assert_eq!(preserved_input(input), input);
+    }
+}
+
+#[test]
+fn finds_real_cell_size_reply_after_bracketed_paste() {
+    let input = b"\x1b[200~\x1b[6;90;90t\x1b[201~\x1b[6;20;10t";
+
+    assert_eq!(terminal_cell_size(input), Some((10, 20)));
+    assert_eq!(preserved_input(input), b"\x1b[200~\x1b[6;90;90t\x1b[201~");
 }

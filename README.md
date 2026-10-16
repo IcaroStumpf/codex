@@ -11,6 +11,13 @@ If you want Codex in your code editor (VS Code, Cursor, Windsurf), <a href="http
 
 ## Quickstart
 
+### Image preview fork
+
+This fork adds `/image` to browse conversation images inside the terminal and
+`/image "path/to/image.png"` to preview a local file. Use Left/Right to switch
+images, `o` to open the original in your system viewer, and Esc to return to chat.
+See [image previews](docs/image-preview.md) for terminal support and build instructions.
+
 ### Installing and running Codex CLI
 
 Run the following on Mac or Linux to install Codex CLI:

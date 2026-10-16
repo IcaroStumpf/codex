@@ -19,6 +19,8 @@
 //! its resolved presentation drives height, painting, and the focused cursor together.
 //!
 //! Preset submenu hints borrow slots and reflow with the composer.
+//! Local `/image` commands, including their literal path argument, can be dispatched while
+//! the parent owns the active input flow; they open the viewer without submitting a model turn.
 //!
 //! The plain-text preset keeps command prefixes literal, including `!`, so Enter and Tab
 //! submit ordinary text without enabling shell mode.
@@ -491,7 +493,7 @@ pub enum InputResult {
 fn parent_owned_command_is_allowed(command: SlashCommand, args: &str) -> bool {
     if matches!(
         command,
-        SlashCommand::Export | SlashCommand::Title | SlashCommand::Statusline
+        SlashCommand::Export | SlashCommand::Image | SlashCommand::Title | SlashCommand::Statusline
     ) {
         return true;
     }

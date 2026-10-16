@@ -230,6 +230,7 @@ mod feedback_upload;
 mod file_change_approvals;
 mod history_pagination;
 mod history_ui;
+mod image_preview;
 mod input;
 mod link_hover;
 mod loaded_threads;
@@ -903,6 +904,7 @@ impl App {
                 .pause_clock();
         }
         let transcript_owns_input = match (&event, &self.overlay) {
+            (TuiEvent::Key(_), Some(Overlay::Image(_))) => true,
             (TuiEvent::Key(key), Some(Overlay::Transcript(overlay))) => {
                 overlay.owns_interaction_key(*key)
             }
@@ -1043,7 +1045,10 @@ impl App {
         }
         if self.reconnect.offline
             && !self.chat_widget.keymap_contexts().is_warnings()
-            && !matches!(&self.overlay, Some(Overlay::Transcript(_)))
+            && !matches!(
+                &self.overlay,
+                Some(Overlay::Transcript(_) | Overlay::Image(_))
+            )
             && let TuiEvent::Key(key) = &event
             && !(self.overlay.is_none()
                 && self.chat_widget.no_modal_or_popup_active()

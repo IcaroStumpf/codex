@@ -1479,6 +1479,50 @@ async fn usage_views_open_the_requested_summary_mode() {
 }
 
 #[tokio::test]
+async fn image_command_opens_local_gallery_without_submitting_a_turn() {
+    let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    submit_composer_text(&mut chat, "/image");
+    assert!(
+        std::iter::from_fn(|| rx.try_recv().ok())
+            .any(|event| matches!(event, AppEvent::OpenImagePreview { path: None }))
+    );
+    assert!(op_rx.try_recv().is_err());
+    assert_eq!(recall_latest_after_clearing(&mut chat), "/image");
+}
+
+#[tokio::test]
+async fn image_command_preserves_spaces_in_quoted_file_paths() {
+    let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    let cwd = chat.config.cwd.to_path_buf();
+    submit_composer_text(&mut chat, "/image \"images/my screenshot.png\"");
+    let requested = std::iter::from_fn(|| rx.try_recv().ok()).find_map(|event| match event {
+        AppEvent::OpenImagePreview { path } => path,
+        _ => None,
+    });
+    assert_eq!(requested, Some(cwd.join("images/my screenshot.png")));
+    assert!(op_rx.try_recv().is_err());
+}
+
+#[tokio::test]
+async fn image_command_requires_absolute_local_paths_in_remote_sessions() {
+    let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.snapshot_local_images = true;
+    submit_composer_text(&mut chat, "/image images/screenshot.png");
+    let events: Vec<_> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
+    assert!(
+        !events
+            .iter()
+            .any(|event| matches!(event, AppEvent::OpenImagePreview { .. }))
+    );
+    assert!(events.iter().any(|event| match event {
+        AppEvent::InsertHistoryCell(cell) =>
+            lines_to_single_string(&cell.display_lines(200)).contains("absolute local path"),
+        _ => false,
+    }));
+    assert!(op_rx.try_recv().is_err());
+}
+
+#[tokio::test]
 async fn usage_command_runs_with_backend_auth_without_chatgpt_account_flag() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     chat.update_account_state(

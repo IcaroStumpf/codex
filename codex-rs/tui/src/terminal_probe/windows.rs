@@ -1,10 +1,13 @@
-//! Probe visible Windows terminal colors without consuming startup typeahead.
+//! Probe visible Windows terminal colors and cell geometry while preserving startup typeahead.
 
 use super::DefaultColors;
-use super::windows_replay::terminal_color_response_ranges;
+use super::windows_replay::terminal_cell_size;
 use super::windows_replay::terminal_default_colors;
+use super::windows_replay::terminal_response_ranges;
 use std::io;
 use std::io::ErrorKind;
+use std::sync::atomic::AtomicU32;
+use std::sync::atomic::Ordering;
 use std::time::Duration;
 use std::time::Instant;
 use windows_sys::Win32::Foundation::HANDLE;
@@ -28,13 +31,28 @@ use windows_sys::Win32::UI::WindowsAndMessaging::GetClassNameW;
 
 const MAX_WINDOWS_PROBE_RECORDS: usize = 64 * 1_024;
 const WINDOWS_PROBE_READ_RECORDS: usize = 64;
+static CELL_SIZE: AtomicU32 = AtomicU32::new(0);
+
+/// Cached terminal-reported cell dimensions; reading this never competes for terminal input.
+pub(crate) fn cell_size() -> Option<(u32, u32)> {
+    let size = CELL_SIZE.load(Ordering::Relaxed);
+    (size != 0).then_some((size & 0xffff, size >> 16))
+}
+
+/// Stop using font metrics that may have changed during a resize, DPI change, or suspension.
+pub(crate) fn invalidate_cell_size() {
+    CELL_SIZE.store(0, Ordering::Relaxed);
+}
 
 /// Prefer OSC colors; use native colors only when the renderer shares the console palette.
 ///
 /// Windows Terminal and xterm.js can render a theme unrelated to ConPTY's console color table.
 /// Their OSC responses share the input queue with user input, so the probe preserves and restores
 /// the original console records without changing Windows' input-record mode.
+/// The cell-pixel query shares this deadline because Windows' console APIs cannot report the
+/// renderer's actual font metrics through ConPTY.
 pub(crate) fn default_colors(timeout: Duration) -> io::Result<Option<DefaultColors>> {
+    invalidate_cell_size();
     let Ok(output) = std_handle(STD_OUTPUT_HANDLE) else {
         return Ok(None);
     };
@@ -85,7 +103,7 @@ fn query_osc_default_colors(
     timeout: Duration,
 ) -> io::Result<Option<DefaultColors>> {
     let deadline = Instant::now() + timeout;
-    write_all(output, b"\x1b]10;?\x1b\\\x1b]11;?\x1b\\")?;
+    write_all(output, b"\x1b]10;?\x1b\\\x1b]11;?\x1b\\\x1b[16t")?;
 
     let mut replay = ConsoleInputReplay::new(input);
     let result = replay.read_until(deadline);
@@ -130,7 +148,7 @@ impl BufferedConsoleInput {
 
     fn preserved_records(&self) -> Vec<INPUT_RECORD> {
         let mut omitted = vec![false; self.records.len()];
-        for response in terminal_color_response_ranges(&self.bytes) {
+        for response in terminal_response_ranges(&self.bytes) {
             for byte_index in response {
                 let record_index = self.byte_record_indices[byte_index];
                 omitted[record_index] = true;
@@ -164,16 +182,17 @@ impl ConsoleInputReplay {
 
     fn read_until(&mut self, deadline: Instant) -> io::Result<Option<DefaultColors>> {
         loop {
-            if let Some(colors) = terminal_default_colors(&self.input.bytes) {
-                return Ok(Some(colors));
+            let colors = terminal_default_colors(&self.input.bytes);
+            if colors.is_some() && terminal_cell_size(&self.input.bytes).is_some() {
+                return Ok(colors);
             }
             if self.input.records.len() >= MAX_WINDOWS_PROBE_RECORDS {
-                return Ok(None);
+                return Ok(colors);
             }
 
             let now = Instant::now();
             if now >= deadline {
-                return Ok(None);
+                return Ok(colors);
             }
             let timeout_ms = deadline
                 .saturating_duration_since(now)
@@ -186,7 +205,7 @@ impl ConsoleInputReplay {
                 WAIT_OBJECT_0 => {
                     self.read_available()?;
                 }
-                WAIT_TIMEOUT => return Ok(None),
+                WAIT_TIMEOUT => return Ok(colors),
                 _ => return Err(io::Error::last_os_error()),
             }
         }
@@ -251,6 +270,13 @@ impl ConsoleInputReplay {
             }
         }
 
+        // Include replies that arrived in the final queue snapshot before dropping them.
+        if let Some((width, height)) = terminal_cell_size(&self.input.bytes) {
+            CELL_SIZE.store(
+                u32::from(width) | (u32::from(height) << 16),
+                Ordering::Relaxed,
+            );
+        }
         let preserved = self.input.preserved_records();
         while self.replayed_records < preserved.len() {
             let remaining = &preserved[self.replayed_records..];

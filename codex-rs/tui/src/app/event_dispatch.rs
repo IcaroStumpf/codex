@@ -54,6 +54,7 @@ impl App {
                 &event,
                 AppEvent::OpenDaemonMenu
                     | AppEvent::OpenWarnings
+                    | AppEvent::OpenImagePreview { .. }
                     | AppEvent::StatusLineSetup { .. }
                     | AppEvent::StatusLineSetupCancelled
                     | AppEvent::TerminalTitleSetup { .. }
@@ -1307,6 +1308,9 @@ impl App {
                     self.keymap.pager.clone(),
                 ));
                 tui.frame_requester().schedule_frame();
+            }
+            AppEvent::OpenImagePreview { path } => {
+                self.open_image_preview(tui, path)?;
             }
             AppEvent::OpenAppLink {
                 app_id,

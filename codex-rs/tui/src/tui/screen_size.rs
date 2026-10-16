@@ -20,6 +20,15 @@ pub(super) struct ScreenSizePolicy {
 impl Tui {
     /// Resolve event geometry while avoiding backend queries on ordinary repaint frames.
     pub(crate) fn screen_size_for_event(&mut self, event: &TuiEvent) -> io::Result<Size> {
+        #[cfg(windows)]
+        if matches!(event, TuiEvent::Resize(_) | TuiEvent::Resume) {
+            crate::terminal_probe::invalidate_cell_size();
+        }
+        self.resolve_screen_size_for_event(event)
+    }
+
+    /// The debounce's synthetic resume only resamples the grid; keep freshly probed font metrics.
+    fn resolve_screen_size_for_event(&mut self, event: &TuiEvent) -> io::Result<Size> {
         if matches!(event, TuiEvent::Resize(_)) {
             self.schedule_screen_size_recheck(TRANSCRIPT_REFLOW_DEBOUNCE);
         } else if matches!(event, TuiEvent::Draw | TuiEvent::FocusGained)
@@ -29,7 +38,7 @@ impl Tui {
             if now < deadline {
                 self.frame_requester.schedule_frame_in(deadline - now);
             } else {
-                return self.screen_size_for_event(&TuiEvent::Resume);
+                return self.resolve_screen_size_for_event(&TuiEvent::Resume);
             }
         }
 

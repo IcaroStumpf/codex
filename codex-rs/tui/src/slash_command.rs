@@ -52,6 +52,7 @@ pub enum SlashCommand {
     Raw,
     Tui,
     Diff,
+    Image,
     Mention,
     Status,
     Daemon,
@@ -113,6 +114,7 @@ impl SlashCommand {
             SlashCommand::Raw => "toggle raw scrollback mode for copy-friendly terminal selection",
             SlashCommand::Tui => "choose the TUI mode for the next launch",
             SlashCommand::Diff => "show git diff (including untracked files)",
+            SlashCommand::Image => "preview conversation images or a local image: /image [path]",
             SlashCommand::Mention => "mention a file",
             SlashCommand::Skills => "use skills to improve how Codex performs specific tasks",
             SlashCommand::Import => "import setup, this project, and recent chats from Claude Code",
@@ -188,6 +190,7 @@ impl SlashCommand {
                 | SlashCommand::Keymap
                 | SlashCommand::Mcp
                 | SlashCommand::Export
+                | SlashCommand::Image
                 | SlashCommand::Raw
                 | SlashCommand::Cd
                 | SlashCommand::Pwd
@@ -208,6 +211,7 @@ impl SlashCommand {
                 | SlashCommand::Export
                 | SlashCommand::Raw
                 | SlashCommand::Diff
+                | SlashCommand::Image
                 | SlashCommand::Mention
                 | SlashCommand::Status
                 | SlashCommand::Daemon
@@ -242,6 +246,7 @@ impl SlashCommand {
                 | SlashCommand::Rollout
                 | SlashCommand::Copy
                 | SlashCommand::Raw
+                | SlashCommand::Image
         )
     }
 
@@ -271,6 +276,7 @@ impl SlashCommand {
             | SlashCommand::MemoryDrop
             | SlashCommand::MemoryUpdate => false,
             SlashCommand::Diff
+            | SlashCommand::Image
             | SlashCommand::Archive
             | SlashCommand::Resume
             | SlashCommand::Model
@@ -374,5 +380,14 @@ mod tests {
             SlashCommand::from_str("approve"),
             Ok(SlashCommand::AutoReview)
         );
+    }
+
+    #[test]
+    fn image_preview_is_a_local_command_available_during_work() {
+        assert_eq!(SlashCommand::from_str("image"), Ok(SlashCommand::Image));
+        assert!(SlashCommand::Image.supports_inline_args());
+        assert!(SlashCommand::Image.available_during_task());
+        assert!(SlashCommand::Image.available_in_side_conversation());
+        assert!(SlashCommand::Image.available_when_thread_unavailable());
     }
 }

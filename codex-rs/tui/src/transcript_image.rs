@@ -57,6 +57,16 @@ pub(crate) fn terminal_cell_size() -> Option<(u32, u32)> {
                 u32::from(size.height / size.rows).max(1),
             )
         })
+        .or_else(|| {
+            #[cfg(windows)]
+            {
+                crate::terminal_probe::cell_size()
+            }
+            #[cfg(not(windows))]
+            {
+                None
+            }
+        })
 }
 
 impl TranscriptImage {

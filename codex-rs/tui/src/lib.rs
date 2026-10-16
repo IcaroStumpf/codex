@@ -177,6 +177,8 @@ pub(crate) mod live_wrap;
 mod local_settings;
 mod rendered_selection;
 pub use live_wrap::RowBuilder;
+mod image_preview;
+mod image_preview_path;
 mod local_chatgpt_auth;
 mod managed_new_thread_defaults;
 mod markdown;

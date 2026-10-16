@@ -506,6 +506,10 @@ impl ChatWidget {
                 self.emit_raw_output_mode_changed(enabled);
             }
             SlashCommand::Tui => self.show_tui_mode_picker(),
+            SlashCommand::Image => {
+                self.app_event_tx
+                    .send(AppEvent::OpenImagePreview { path: None });
+            }
             SlashCommand::Diff => {
                 self.add_diff_in_progress();
                 let tx = self.app_event_tx.clone();
@@ -843,6 +847,22 @@ impl ChatWidget {
                 });
             }
             SlashCommand::Cd => self.request_working_directory_change(trimmed),
+            SlashCommand::Image => {
+                let path = crate::image_preview_path::resolve_image_path(trimmed, Path::new(""));
+                if self.snapshot_local_images && !path.is_absolute() {
+                    self.add_error_message(
+                        "In a remote session, use /image with an absolute local path.".to_string(),
+                    );
+                } else {
+                    let cwd = self
+                        .current_cwd
+                        .as_deref()
+                        .unwrap_or(self.config.cwd.as_path());
+                    self.app_event_tx.send(AppEvent::OpenImagePreview {
+                        path: Some(cwd.join(path)),
+                    });
+                }
+            }
             SlashCommand::Pwd => {
                 self.add_error_message("Usage: /pwd".to_string());
             }
@@ -1332,6 +1352,7 @@ impl ChatWidget {
             }
             SlashCommand::Feedback
             | SlashCommand::Warnings
+            | SlashCommand::Image
             | SlashCommand::Export
             | SlashCommand::New
             | SlashCommand::Archive
