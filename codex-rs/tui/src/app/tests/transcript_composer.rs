@@ -452,6 +452,37 @@ async fn image_preview_external_shortcut_preserves_draft_without_opening_gallery
 }
 
 #[tokio::test]
+async fn image_preview_external_shortcut_works_while_disconnected() -> Result<()> {
+    let (mut app, mut events, _operations) = make_test_app_with_channels().await;
+    let mut app_server = start_config_write_test_app_server(&app).await?;
+    let mut tui = crate::tui::test_support::make_test_tui()?;
+    app.reconnect.offline = true;
+    app.chat_widget
+        .apply_external_edit("keep this offline draft".into());
+    while events.try_recv().is_ok() {}
+
+    let control = app
+        .handle_tui_event(
+            &mut tui,
+            &mut app_server,
+            TuiEvent::Key(KeyEvent::new(KeyCode::Char('o'), KeyModifiers::ALT)),
+        )
+        .await?;
+
+    assert!(matches!(control, AppRunControl::Continue));
+    assert!(
+        std::iter::from_fn(|| events.try_recv().ok())
+            .any(|event| matches!(event, AppEvent::OpenLatestImageExternally))
+    );
+    assert!(app.overlay.is_none());
+    assert_eq!(
+        app.chat_widget.composer_text_with_pending(),
+        "keep this offline draft"
+    );
+    Ok(())
+}
+
+#[tokio::test]
 async fn image_preview_external_shortcut_respects_search_modals_and_custom_bindings() -> Result<()>
 {
     let mut app = crate::app::test_support::make_test_app().await;

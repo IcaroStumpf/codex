@@ -13,9 +13,10 @@ If you want Codex in your code editor (VS Code, Cursor, Windsurf), <a href="http
 
 ### Image preview fork
 
-This fork adds `/image` to browse conversation images inside the terminal and
-`/image "path/to/image.png"` to preview a local file. Use Left/Right to switch
-images, `o` to open the original in your system viewer, and Esc to return to chat.
+This fork shows generated images in the terminal, with a color-block fallback.
+Use `/image` to browse conversation images or `/image "path/to/image.png"` to
+preview a file. Left/Right switches images, `o` opens the system viewer, and Esc
+returns to chat. Alt+O opens the latest image directly from chat.
 See [image previews](docs/image-preview.md) for terminal support and build instructions.
 
 ### Installing and running Codex CLI

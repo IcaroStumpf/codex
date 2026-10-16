@@ -2,6 +2,10 @@ name: Image preview
 
 on:
   workflow_dispatch:
+  pull_request:
+    paths:
+      - "codex-rs/tui/**"
+      - ".github/workflows/image-preview.yml"
   push:
     branches:
       - feat/terminal-image-preview
@@ -10,7 +14,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: image-preview-${{ github.ref }}
+  group: image-preview-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 
 env:
@@ -20,6 +24,7 @@ env:
   CARGO_INCREMENTAL: "0"
   CARGO_NET_GIT_FETCH_WITH_CLI: "true"
   RUST_MIN_STACK: "8388608"
+  FORCE_COLOR: "0"
 
 jobs:
   preview-tests:
@@ -71,6 +76,12 @@ jobs:
 
       - name: Test image slash command
         run: cargo test --locked -p codex-tui --lib image_command
+
+      - name: Test transcript layout and fallback previews
+        run: cargo test --locked -p codex-tui --lib transcript_view
+
+      - name: Test terminal image cleanup
+        run: cargo test --locked -p codex-tui --lib custom_terminal
 
       - name: Test terminal probes and input preservation
         run: cargo test --locked -p codex-tui --lib terminal_probe

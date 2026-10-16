@@ -1053,6 +1053,7 @@ impl App {
             && !(self.overlay.is_none()
                 && self.chat_widget.no_modal_or_popup_active()
                 && self.keymap.app.open_warnings.is_pressed(*key))
+            && !self.should_open_latest_image_externally(*key)
         {
             if self.overlay.is_none()
                 && self.chat_widget.no_modal_or_popup_active()
