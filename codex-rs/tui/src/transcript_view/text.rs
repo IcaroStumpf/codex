@@ -43,6 +43,7 @@ use ratatui::text::Line;
 /// One cell's logical text and its width-dependent display rows.
 pub(super) struct TextLayout {
     pub(super) image: Option<std::sync::Arc<crate::transcript_image::TranscriptImage>>,
+    pub(super) fallback_image: Option<std::sync::Arc<crate::transcript_image::HalfBlockImage>>,
     logical: Vec<LogicalLine>,
     text: String,
     rows: Vec<TextRow>,
@@ -139,6 +140,7 @@ impl TextLayout {
                 layout.with_disclosure_control_at(control.label.clone(), control.source_offset);
         }
         layout.image = self.image.clone();
+        layout.fallback_image = self.fallback_image.clone();
         if self.separated {
             layout.with_leading_separator()
         } else {
@@ -278,6 +280,9 @@ impl TextLayout {
             + self
                 .visible_image()
                 .map_or(0, |image| usize::from(image.rows))
+            + self
+                .visible_fallback_image()
+                .map_or(0, |image| usize::from(image.rows))
     }
 
     pub(super) fn text_row_count(&self) -> usize {
@@ -293,6 +298,12 @@ impl TextLayout {
                     || crate::transcript_image::terminal_cell_size()
                         == Some((image.cell_width, image.cell_height)))
         })
+    }
+
+    fn visible_fallback_image(&self) -> Option<&crate::transcript_image::HalfBlockImage> {
+        self.fallback_image
+            .as_deref()
+            .filter(|image| image.columns + 2 <= self.width)
     }
 
     pub(super) fn disclosure_row(&self) -> Option<usize> {
@@ -315,6 +326,21 @@ impl TextLayout {
             row_area.width = row.content_width;
             HyperlinkParagraph::new(std::slice::from_ref(&row.line), row.line.line.style)
                 .render(row_area, buf);
+        }
+        if let Some(image) = self.visible_fallback_image() {
+            let skip = self.text_row_count().saturating_sub(start_row);
+            if skip < usize::from(area.height) {
+                image.render(
+                    Rect::new(
+                        area.x + area.width.saturating_sub(image.columns) / 2,
+                        area.y + skip as u16,
+                        image.columns.min(area.width),
+                        area.height - skip as u16,
+                    ),
+                    buf,
+                    start_row.saturating_sub(self.text_row_count()),
+                );
+            }
         }
     }
 
@@ -384,7 +410,7 @@ impl TextLayout {
 
     /// Find the display row containing a source position, including omitted wrapping whitespace.
     pub(super) fn row_for_offset(&self, offset: usize) -> usize {
-        if self.visible_image().is_some() && offset >= self.text.len() {
+        if self.row_count() > self.text_row_count() && offset >= self.text.len() {
             return self.row_count().saturating_sub(1);
         }
         let before_control = if let Some(control_row) = self.disclosure_row() {
@@ -525,6 +551,7 @@ impl TextLayout {
         }
         Self {
             image: None,
+            fallback_image: None,
             logical,
             text,
             rows,

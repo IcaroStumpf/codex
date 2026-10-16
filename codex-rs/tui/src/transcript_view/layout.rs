@@ -91,6 +91,7 @@ pub(super) struct CellPresentation {
     disclosure: bool,
     detailed: bool,
     image_protocol: Option<crate::pets::ImageProtocol>,
+    image_fallback: bool,
 }
 
 impl TranscriptView {
@@ -186,6 +187,7 @@ impl TranscriptView {
             image_protocol: self
                 .image_protocol
                 .filter(|_| mode == HistoryRenderMode::Rich && reveal_image),
+            image_fallback: self.image_fallback && mode == HistoryRenderMode::Rich && reveal_image,
         };
         let shortcut = self
             .disclosure
@@ -218,12 +220,18 @@ impl TranscriptView {
                     width,
                 )
             };
-            if let Some(protocol) = presentation.image_protocol
+            if (presentation.image_protocol.is_some() || presentation.image_fallback)
                 && let Some(path) = cell.image_path()
             {
-                layout.image =
+                layout.image = presentation.image_protocol.and_then(|protocol| {
                     crate::transcript_image::TranscriptImage::load(path.as_path(), width, protocol)
-                        .map(Arc::new);
+                        .map(Arc::new)
+                });
+                if layout.image.is_none() && presentation.image_fallback {
+                    layout.fallback_image =
+                        crate::transcript_image::HalfBlockImage::load(path.as_path(), width)
+                            .map(Arc::new);
+                }
             }
             layout
         }))
@@ -304,6 +312,11 @@ impl LayoutCache {
                 + entry
                     .layout
                     .image
+                    .as_ref()
+                    .map_or(0, |image| image.pixels.len())
+                + entry
+                    .layout
+                    .fallback_image
                     .as_ref()
                     .map_or(0, |image| image.pixels.len())
         };

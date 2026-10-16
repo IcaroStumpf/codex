@@ -55,6 +55,8 @@ impl App {
                 AppEvent::OpenDaemonMenu
                     | AppEvent::OpenWarnings
                     | AppEvent::OpenImagePreview { .. }
+                    | AppEvent::OpenLatestImageExternally
+                    | AppEvent::ImageOpenFinished { .. }
                     | AppEvent::StatusLineSetup { .. }
                     | AppEvent::StatusLineSetupCancelled
                     | AppEvent::TerminalTitleSetup { .. }
@@ -1311,6 +1313,18 @@ impl App {
             }
             AppEvent::OpenImagePreview { path } => {
                 self.open_image_preview(tui, path)?;
+            }
+            AppEvent::OpenLatestImageExternally => {
+                self.open_latest_image_externally();
+            }
+            AppEvent::ImageOpenFinished { transcript, result } => {
+                if Arc::ptr_eq(&transcript, &self.chat_widget.warning_display_state.transcript)
+                    && let Err(error) = result
+                {
+                    self.chat_widget.add_error_message(format!(
+                        "Could not open the image in the external viewer: {error}"
+                    ));
+                }
             }
             AppEvent::OpenAppLink {
                 app_id,

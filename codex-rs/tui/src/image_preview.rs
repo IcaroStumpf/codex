@@ -19,7 +19,6 @@ use image::RgbaImage;
 use image::imageops::FilterType;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
-use ratatui::style::Color;
 use ratatui::style::Stylize;
 use ratatui::widgets::Clear;
 use ratatui::widgets::Paragraph;
@@ -31,6 +30,9 @@ use crate::keymap::PagerKeymap;
 use crate::pets::ImageProtocol;
 use crate::transcript_image::ImagePlacement;
 use crate::transcript_image::TranscriptImage;
+use crate::transcript_image::composite_checkerboard;
+use crate::transcript_image::halfblock_pixels;
+use crate::transcript_image::paint_halfblocks;
 use crate::transcript_image::terminal_cell_size;
 use crate::tui::Tui;
 use crate::tui::TuiEvent;
@@ -337,51 +339,12 @@ fn prepare_preview(
             cell_height,
         }))
     } else {
-        let max_width = u32::from(area.width).clamp(1, 512);
-        let max_height = u32::from(area.height).saturating_mul(2).clamp(1, 1_024);
-        let (cell_width, cell_height) = cell_size.unwrap_or((1, 2));
-        // A half-block sample occupies one cell's width and half its height. Fit using those
-        // physical proportions; square samples are only an assumption when geometry is unknown.
-        let aspect_width = u128::from(source.width().max(1)) * u128::from(cell_height);
-        let aspect_height = u128::from(source.height().max(1)) * 2 * u128::from(cell_width);
-        let (width, height) =
-            if u128::from(max_width) * aspect_height <= u128::from(max_height) * aspect_width {
-                (
-                    max_width,
-                    (u128::from(max_width) * aspect_height / aspect_width).max(1) as u32,
-                )
-            } else {
-                (
-                    (u128::from(max_height) * aspect_width / aspect_height).max(1) as u32,
-                    max_height,
-                )
-            };
-        let mut pixels = source
-            .resize_exact(width, height, FilterType::Triangle)
-            .to_rgba8();
-        composite_checkerboard(&mut pixels, 4);
-        PreviewImage::HalfBlocks(pixels)
+        PreviewImage::HalfBlocks(halfblock_pixels(source, area, cell_size))
     };
     PreparedPreview {
         bounds: (area.width, area.height),
         cell_size,
         image,
-    }
-}
-
-fn composite_checkerboard(pixels: &mut RgbaImage, square_size: u32) {
-    for (x, y, pixel) in pixels.enumerate_pixels_mut() {
-        let background = if (x / square_size + y / square_size).is_multiple_of(2) {
-            40
-        } else {
-            64
-        };
-        let alpha = u32::from(pixel[3]);
-        for channel in &mut pixel.0[..3] {
-            *channel =
-                ((u32::from(*channel) * alpha + background * (255 - alpha) + 127) / 255) as u8;
-        }
-        pixel[3] = 255;
     }
 }
 
@@ -396,30 +359,16 @@ fn centered(area: Rect, width: u16, height: u16) -> Rect {
     )
 }
 
-// Image pixels need their source RGB colors independently of the terminal's UI theme.
-#[allow(clippy::disallowed_methods)]
 fn render_halfblocks(pixels: &RgbaImage, area: Rect, buffer: &mut Buffer) {
     let image_area = centered(
         area,
         pixels.width() as u16,
         pixels.height().div_ceil(2) as u16,
     );
-    for y in 0..image_area.height {
-        for x in 0..image_area.width {
-            let top = pixels.get_pixel(u32::from(x), u32::from(y) * 2);
-            let bottom = pixels.get_pixel(
-                u32::from(x),
-                (u32::from(y) * 2 + 1).min(pixels.height() - 1),
-            );
-            buffer[(image_area.x + x, image_area.y + y)]
-                .set_char('▀')
-                .set_fg(Color::Rgb(top[0], top[1], top[2]))
-                .set_bg(Color::Rgb(bottom[0], bottom[1], bottom[2]));
-        }
-    }
+    paint_halfblocks(pixels, image_area, buffer, 0);
 }
 
-fn open_image_externally(path: &Path) -> io::Result<()> {
+pub(crate) fn open_image_externally(path: &Path) -> io::Result<()> {
     // Keep ordinary Windows paths compatible with ShellExecuteW, and validate a symlink's
     // resolved filename as well as its contents before asking the OS to open it.
     let path = dunce::canonicalize(path)?;
@@ -553,6 +502,7 @@ mod tests {
     use codex_config::types::TuiKeymap;
     use image::Rgba;
     use pretty_assertions::assert_eq;
+    use ratatui::style::Color;
 
     fn image(width: u32, height: u32) -> DynamicImage {
         DynamicImage::ImageRgba8(RgbaImage::from_pixel(width, height, Rgba([255, 0, 0, 255])))

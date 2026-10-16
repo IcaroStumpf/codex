@@ -5,6 +5,35 @@ use crate::history_cell::UserHistoryCell;
 use crate::image_preview::ImagePreviewOverlay;
 
 impl App {
+    pub(super) fn open_latest_image_externally(&mut self) {
+        if self.app_server_target.uses_remote_workspace()
+            || !crate::projectless::has_only_local_environments(&self.environment_manager)
+        {
+            self.chat_widget.add_error_message(
+                "Opening conversation images requires a local workspace. Use /image <absolute-local-path> instead."
+                    .to_string(),
+            );
+            return;
+        }
+        let Some(path) = conversation_image_paths(&self.transcript_cells)
+            .into_iter()
+            .next()
+        else {
+            self.chat_widget.add_error_message(
+                "No local images in this conversation yet. Use /image <path> to preview an image file."
+                    .to_string(),
+            );
+            return;
+        };
+        let transcript = Arc::clone(&self.chat_widget.warning_display_state.transcript);
+        let events = self.app_event_tx.clone();
+        std::thread::spawn(move || {
+            let result = crate::image_preview::open_image_externally(&path)
+                .map_err(|error| error.to_string());
+            events.send(AppEvent::ImageOpenFinished { transcript, result });
+        });
+    }
+
     pub(super) fn open_image_preview(
         &mut self,
         tui: &mut tui::Tui,

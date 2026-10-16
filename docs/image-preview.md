@@ -5,6 +5,9 @@ terminal graphics renderer and works with both Windows and Linux builds.
 
 ## Usage
 
+- Alt+O in chat opens the latest local conversation image directly in the system
+  image viewer (GIMP when it is your default), without entering the gallery.
+  Plain `o` remains normal typing in chat.
 - `/image` opens local images from the current conversation, most recent first.
   The gallery includes user attachments, images inspected with `view_image`, and
   saved image-generation results. Repeated paths appear once.
@@ -25,7 +28,11 @@ The viewer uses Codex's existing Kitty or Sixel graphics support when available.
 On Windows, the startup terminal probe requests the character-cell size needed
 to position Sixel images. Unsupported terminals, terminal multiplexers, and
 terminals that do not report the required geometry use a lower-resolution color
-block preview. The external viewer action remains available for full detail.
+block preview. Generated images also appear automatically in the conversation
+using this color-block fallback, including in terminals such as Ptyxis and
+GNOME Terminal. These previews are lower resolution than native terminal
+graphics; `/image` opens a larger preview, and the external viewer action
+remains available for full detail.
 
 PNG, JPEG, GIF, and WebP are supported by the existing image decoder. Animated
 images are shown as a still frame. Remote image URLs are not downloaded. In a

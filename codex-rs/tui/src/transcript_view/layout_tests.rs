@@ -52,6 +52,7 @@ fn layouts_refresh_for_width_animation_and_mutable_frames() {
                     disclosure: false,
                     detailed: false,
                     image_protocol: None,
+                    image_fallback: false,
                 },
                 || TextLayout::new(history.transcript_hyperlink_lines(width), width),
             )
@@ -109,6 +110,7 @@ fn recent_entries_are_reused_and_old_entries_are_evicted() {
                 disclosure: false,
                 detailed: false,
                 image_protocol: None,
+                image_fallback: false,
             },
             || {
                 TextLayout::new(
@@ -130,6 +132,7 @@ fn recent_entries_are_reused_and_old_entries_are_evicted() {
                 disclosure: false,
                 detailed: false,
                 image_protocol: None,
+                image_fallback: false,
             },
             || {
                 TextLayout::new(
@@ -273,4 +276,67 @@ fn fullscreen_image_previews_follow_layout_without_entering_text_surfaces() {
     view.render(area, &mut buf, &cells);
     assert_eq!(buf, text_only);
     assert!(view.image_placements().is_empty());
+}
+
+#[test]
+#[allow(clippy::disallowed_methods)] // Verify source RGB colors, independently of the UI theme.
+fn fullscreen_image_previews_fall_back_to_cells_without_a_graphics_protocol() {
+    use crate::history_cell::new_image_generation_call;
+    use codex_utils_absolute_path::AbsolutePathBuf;
+    use ratatui::style::Color;
+
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("generated.png");
+    image::RgbaImage::from_pixel(64, 32, image::Rgba([255, 0, 0, 255]))
+        .save(&path)
+        .unwrap();
+    let cells: Vec<Arc<dyn HistoryCell>> = vec![Arc::new(new_image_generation_call(
+        "generated".to_string(),
+        "completed",
+        Some("A red rectangle".to_string()),
+        Some(AbsolutePathBuf::try_from(path.clone()).unwrap()),
+    ))];
+    let area = Rect::new(0, 0, 80, 40);
+    let mut view = TranscriptView::default();
+    let mut buffer = Buffer::empty(area);
+    view.render(area, &mut buffer, &cells);
+    let source = view.layout(&cells, 0).unwrap().text().to_string();
+
+    view.image_fallback = true;
+    view.render(area, &mut buffer, &cells);
+    let layout = view.layout(&cells, 0).unwrap();
+    assert_eq!(layout.text(), source);
+    assert!(layout.row_count() > layout.text_row_count());
+    assert!(view.image_placements().is_empty());
+    assert!(buffer.content.iter().any(|cell| cell.symbol() == "▀"
+        && cell.fg == Color::Rgb(255, 0, 0)
+        && cell.bg == Color::Rgb(255, 0, 0)));
+    assert!(!layout.text().contains('▀'));
+
+    // Retained layouts hide images that no longer fit and restore them when widened.
+    let narrow = layout.rewrap(8);
+    assert_eq!(narrow.row_count(), narrow.text_row_count());
+    assert_eq!(narrow.rewrap(area.width).row_count(), layout.row_count());
+
+    // Starting within an image clips the raster to an inset, short viewport.
+    let inset = Rect::new(7, 5, 80, 3);
+    let mut clipped = Buffer::empty(inset);
+    layout.render(inset, &mut clipped, layout.text_row_count() + 1);
+    assert_eq!(clipped[(inset.x + inset.width / 2, inset.y)].symbol(), "▀");
+    assert_eq!(
+        clipped[(inset.x + inset.width / 2, inset.bottom() - 1)].symbol(),
+        "▀"
+    );
+
+    view.set_presentation(false, HistoryRenderMode::Raw);
+    view.render(area, &mut Buffer::empty(area), &cells);
+    let raw = view.layout(&cells, 0).unwrap();
+    assert_eq!(raw.row_count(), raw.text_row_count());
+
+    // Missing files remain ordinary text entries rather than breaking resumed sessions.
+    std::fs::remove_file(path).unwrap();
+    view.set_presentation(false, HistoryRenderMode::Rich);
+    view.render(area, &mut Buffer::empty(area), &cells);
+    let missing = view.layout(&cells, 0).unwrap();
+    assert_eq!(missing.row_count(), missing.text_row_count());
 }

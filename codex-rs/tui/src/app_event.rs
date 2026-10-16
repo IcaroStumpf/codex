@@ -491,6 +491,13 @@ pub(crate) enum AppEvent {
     OpenImagePreview {
         path: Option<PathBuf>,
     },
+    /// Open the latest local conversation image without entering the gallery.
+    OpenLatestImageExternally,
+    /// Complete an image launch only in the transcript that requested it.
+    ImageOpenFinished {
+        transcript: Arc<()>,
+        result: Result<(), String>,
+    },
     /// Copy a diagnostic and acknowledge in the footer, without appending history.
     CopyWarning(String),
     /// Apply the user's decisions for the frozen warning details, in viewer-close order.

@@ -43,6 +43,7 @@ impl App {
             && !(!rename_active
                 && key_event.kind == KeyEventKind::Press
                 && matches!(key_event.code, KeyCode::Char('v' | 'V')))
+            && !self.should_open_latest_image_externally(key_event)
             // Empty-draft agent navigation also has fixed legacy-terminal fallbacks.
             && !(!rename_active
                 && self.chat_widget.composer_text_with_pending().is_empty()
@@ -597,6 +598,11 @@ impl App {
             return;
         }
 
+        if self.should_open_latest_image_externally(key_event) {
+            self.app_event_tx.send(AppEvent::OpenLatestImageExternally);
+            return;
+        }
+
         if self.chat_widget.is_external_writer_view()
             && self.overlay.is_none()
             && self.chat_widget.no_modal_or_popup_active()
@@ -795,6 +801,25 @@ impl App {
 
     fn app_keymap_shortcuts_available(&self) -> bool {
         self.overlay.is_none() && self.chat_widget.no_modal_or_popup_active()
+    }
+
+    pub(super) fn should_open_latest_image_externally(&self, key: KeyEvent) -> bool {
+        if key.kind != KeyEventKind::Press
+            || key.code != KeyCode::Char('o')
+            || key.modifiers != KeyModifiers::ALT
+            || !self.app_keymap_shortcuts_available()
+            || self.transcript_view.is_search_editing()
+        {
+            return false;
+        }
+        // Explicit keybindings and chords keep priority over this fixed convenience shortcut.
+        let contexts = self.active_keymap_contexts();
+        !keymap_action_ids()
+            .filter(|action| contexts.contains_action(*action))
+            .any(|action| {
+                bindings_for_action(&self.keymap, action.context.config_name(), action.action)
+                    .is_some_and(|bindings| bindings.is_pressed(key))
+            })
     }
 
     pub(super) fn refresh_status_line(&mut self) {

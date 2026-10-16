@@ -414,3 +414,71 @@ async fn assert_transcript_close_repaints_inline_draft(mut app: Box<App>) -> Res
 async fn transcript_viewer_close_repaints_preserved_inline_draft() -> Result<()> {
     assert_transcript_close_repaints_inline_draft(make_test_app().await).await
 }
+
+#[tokio::test]
+async fn image_preview_external_shortcut_preserves_draft_without_opening_gallery() -> Result<()> {
+    let (mut app, mut events, _operations) = make_test_app_with_channels().await;
+    let mut app_server = start_config_write_test_app_server(&app).await?;
+    let mut tui = crate::tui::test_support::make_test_tui()?;
+    app.chat_widget
+        .apply_external_edit("open this later".into());
+    while events.try_recv().is_ok() {}
+    app.handle_tui_event(
+        &mut tui,
+        &mut app_server,
+        TuiEvent::Key(KeyEvent::new(KeyCode::Char('o'), KeyModifiers::ALT)),
+    )
+    .await?;
+    assert!(
+        std::iter::from_fn(|| events.try_recv().ok())
+            .any(|event| matches!(event, AppEvent::OpenLatestImageExternally))
+    );
+    assert!(app.overlay.is_none());
+    assert_eq!(
+        app.chat_widget.composer_text_with_pending(),
+        "open this later"
+    );
+
+    // An ordinary letter still reaches the composer.
+    app.chat_widget.apply_external_edit(String::new());
+    press_key(&mut app, &mut tui, &mut app_server, KeyCode::Char('o')).await?;
+    press_key(&mut app, &mut tui, &mut app_server, KeyCode::Left).await?;
+    assert_eq!(app.chat_widget.composer_text_with_pending(), "o");
+    assert!(
+        !std::iter::from_fn(|| events.try_recv().ok())
+            .any(|event| matches!(event, AppEvent::OpenLatestImageExternally))
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn image_preview_external_shortcut_respects_search_modals_and_custom_bindings() -> Result<()>
+{
+    let mut app = crate::app::test_support::make_test_app().await;
+    let key = KeyEvent::new(KeyCode::Char('o'), KeyModifiers::ALT);
+    assert!(app.should_open_latest_image_externally(key));
+    assert!(!app.should_open_latest_image_externally(KeyEvent::new(
+        KeyCode::Char('o'),
+        KeyModifiers::NONE,
+    )));
+    assert!(
+        !app.should_open_latest_image_externally(KeyEvent::new_with_kind(
+            KeyCode::Char('o'),
+            KeyModifiers::ALT,
+            crossterm::event::KeyEventKind::Repeat,
+        ))
+    );
+    app.transcript_view.begin_search();
+    assert!(!app.should_open_latest_image_externally(key));
+    app.transcript_view.cancel_search();
+    app.keymap = RuntimeKeymap::from_config(&serde_json::from_value(serde_json::json!({
+        "global": {"open_transcript": "alt-o"}
+    }))?)
+    .expect("valid image shortcut override");
+    assert!(!app.should_open_latest_image_externally(key));
+    app.keymap = RuntimeKeymap::defaults();
+    let keymap = app.keymap.clone();
+    app.chat_widget.open_keymap_debug(&keymap);
+    assert!(!app.should_open_latest_image_externally(key));
+    Ok(())
+}
